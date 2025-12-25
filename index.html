@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Merry Christmas To Jia</title>
+    <style>
+        /* --- 基础设置 --- */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            touch-action: none;
+        }
+
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* --- 启动页 --- */
+        #start-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            z-index: 999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 1s;
+        }
+        
+        #start-btn {
+            padding: 15px 40px;
+            background: transparent;
+            border: 2px solid #ffb6c1;
+            color: #ffb6c1;
+            font-size: 1.1rem;
+            border-radius: 50px;
+            box-shadow: 0 0 15px #ffb6c1;
+            cursor: pointer;
+            animation: pulseBtn 1.5s infinite;
+        }
+
+        /* --- 祝福文字层 (CSS动画保证清晰度) --- */
+        #text-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 100;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        /* 阶段1的文字 */
+        .intro-text {
+            color: #fff;
+            font-size: 2rem;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 1s ease;
+            text-shadow: 0 0 10px #ff69b4;
+        }
+        
+        .intro-sub {
+            color: #ffb6c1;
+            font-size: 1.2rem;
+            margin-top: 10px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 1s ease 0.3s; /* 延迟显示 */
+        }
+
+        /* 最终显示的文字 */
+        #final-ui {
+            position: absolute;
+            top: 12%;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 2s;
+            pointer-events: none;
+        }
+
+        .to-jia {
+            font-family: 'Brush Script MT', cursive;
+            font-size: 3rem;
+            color: #fff;
+            text-shadow: 0 0 10px #ff1493, 0 0 20px #ff69b4;
+            margin-bottom: 5px;
+        }
+
+        .merry {
+            color: rgba(255,255,255,0.9);
+            font-size: 1.2rem;
+            letter-spacing: 5px;
+            text-transform: uppercase;
+        }
+
+        /* --- 动画关键帧 --- */
+        @keyframes pulseBtn {
+            0% { transform: scale(1); box-shadow: 0 0 10px #ffb6c1; }
+            50% { transform: scale(1.05); box-shadow: 0 0 25px #ffb6c1; }
+            100% { transform: scale(1); box-shadow: 0 0 10px #ffb6c1; }
+        }
+
+    </style>
+</head>
+<body>
+
+    <audio id="bgm" loop>
+        <source src="./bgm.mp3" type="audio/mpeg">
+    </audio>
+
+    <div id="start-screen">
+        <div id="start-btn">点击开启 银诗嘉的平安夜</div>
+    </div>
+
+    <div id="text-layer">
+        <div class="intro-text" id="t1">Hi 银诗嘉</div>
+        <div class="intro-sub" id="t2">平安夜 平平安安</div>
+    </div>
+
+    <div id="final-ui">
+        <div class="to-jia">To Jia:</div>
+        <div class="merry">Merry Christmas</div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let w, h;
+        let particles = [];
+        let snowParticles = [];
+        let rings = []; // 底部涟漪
+        
+        // 动画状态机
+        let state = 'waiting'; // waiting -> intro -> tree
+        let time = 0;
+
+        function resize() {
+            w = canvas.width = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // ----------------------------------------
+        // 粒子系统：构建精美圣诞树
+        // ----------------------------------------
+        
+        class Particle {
+            constructor(type) {
+                this.reset(type);
+            }
+
+            reset(type) {
+                this.type = type; // 'tree' or 'snow'
+                
+                if (type === 'tree') {
+                    // 树粒子初始化：先随机分布在底部，等待聚合
+                    this.angle = Math.random() * Math.PI * 2;
+                    // 最终高度 (0 到 1 之间)
+                    this.targetH = Math.random(); 
+                    this.currentH = 0; // 当前生长高度
+                    
+                    // 颜色：视频中的粉白金配色
+                    const rand = Math.random();
+                    if (rand > 0.9) this.color = `hsla(40, 100%, 70%, ${0.5 + Math.random()*0.5})`; // 金色点缀
+                    else if (rand > 0.6) this.color = `hsla(0, 0%, 100%, ${0.4 + Math.random()*0.6})`; // 白色
+                    else this.color = `hsla(330, 80%, 70%, ${0.3 + Math.random()*0.7})`; // 粉色
+
+                    this.maxRadius = 160 * (1 - this.targetH) + 10; // 树锥形半径
+                    this.speed = Math.random() * 0.02 + 0.01;
+                    this.size = Math.random() * 2 + 0.5;
+                    this.offset = Math.random() * 100; // 随机偏移，让呼吸感不同步
+                } 
+                else if (type === 'snow') {
+                    this.x = Math.random() * w;
+                    this.y = Math.random() * -h;
+                    this.size = Math.random() * 2 + 1;
+                    this.speed = Math.random() * 1 + 0.5;
+                    this.alpha = Math.random() * 0.5 + 0.3;
+                }
+            }
+
+            update(dt) {
+                if (this.type === 'tree') {
+                    // 螺旋上升逻辑
+                    if (state === 'tree' && this.currentH < this.targetH) {
+                        this.currentH += this.speed; // 生长
+                    }
+                    
+                    // 持续旋转
+                    this.angle += 0.01; 
+                    
+                    // 呼吸效果 (基于时间的正弦波)
+                    this.pulse = Math.sin(time * 2 + this.offset) * 0.1; 
+                } 
+                else if (this.type === 'snow') {
+                    this.y += this.speed;
+                    this.x += Math.sin(this.y * 0.01) * 0.5; // 飘落摆动
+                    if (this.y > h) this.y = -10;
+                }
+            }
+
+            draw() {
+                if (this.type === 'tree') {
+                    // 3D 投影逻辑
+                    const h_px = -400 * this.currentH + 200; // 高度映射到像素 (树高400)
+                    const r_px = this.maxRadius * (1 + this.pulse); // 加上呼吸效果的半径
+                    
+                    // 3D 坐标
+                    const x3 = Math.cos(this.angle) * r_px;
+                    const z3 = Math.sin(this.angle) * r_px;
+                    const y3 = h_px;
+
+                    // 简单的透视投影
+                    const fov = 300;
+                    const scale = fov / (fov + z3 + 400); // +400 是推远一点
+                    
+                    const x2 = w / 2 + x3 * scale;
+                    const y2 = h / 2 + y3 * scale + 100; // +100 是把树往下挪
+
+                    if (scale > 0) {
+                        ctx.fillStyle = this.color;
+                        ctx.beginPath();
+                        ctx.arc(x2, y2, this.size * scale * (scale*2), 0, Math.PI*2); // 距离越近越大
+                        ctx.fill();
+                    }
+                } 
+                else if (this.type === 'snow') {
+                    ctx.fillStyle = `rgba(255,255,255,${this.alpha})`;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        // 底部同心圆类 (视频里的底座效果)
+        class Ring {
+            constructor() {
+                this.y = 0;
+                this.radius = 0;
+                this.alpha = 1;
+            }
+            draw() {
+                // 这是一个平躺的圆，需要压扁 y 轴
+                this.radius += 0.5;
+                this.alpha -= 0.005;
+                if (this.alpha <= 0) {
+                    this.radius = 0;
+                    this.alpha = 1;
+                }
+
+                ctx.strokeStyle = `rgba(255, 182, 193, ${this.alpha * 0.5})`; // 浅粉色
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                // ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle)
+                ctx.ellipse(w/2, h/2 + 280, this.radius, this.radius * 0.3, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        // 初始化
+        function init() {
+            // 树粒子 2000 个
+            for(let i=0; i<2000; i++) particles.push(new Particle('tree'));
+            // 雪花粒子 200 个
+            for(let i=0; i<200; i++) snowParticles.push(new Particle('snow'));
+            // 涟漪 3 个
+            for(let i=0; i<3; i++) {
+                let r = new Ring();
+                r.radius = i * 50;
+                rings.push(r);
+            }
+        }
+
+        // 主循环
+        function animate() {
+            // 清空画布 (使用透明黑色制造轻微拖尾，但不至于模糊)
+            ctx.fillStyle = '#000'; 
+            ctx.fillRect(0, 0, w, h);
+
+            // 关键：启用叠加混合模式，让粒子发光！
+            ctx.globalCompositeOperation = 'lighter';
+
+            time += 0.01;
+
+            if (state === 'tree') {
+                // 绘制涟漪
+                rings.forEach(r => r.draw());
+
+                // 绘制树
+                particles.forEach(p => {
+                    p.update();
+                    p.draw();
+                });
+
+                // 绘制顶部大星星/爱心
+                drawTopStar();
+            }
+
+            // 绘制雪 (雪不发光，改回默认混合)
+            ctx.globalCompositeOperation = 'source-over';
+            snowParticles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        function drawTopStar() {
+            // 计算树顶的位置
+            const fov = 300;
+            // 树顶大约在 y = -200 (模型坐标)
+            // 需要做同样的投影计算
+            const y3 = -200;
+            const scale = fov / (fov + 400); // 假设在中心 z=0
+            const x2 = w / 2;
+            const y2 = h / 2 + y3 * scale + 100;
+
+            // 发光球体模拟星星
+            const gradient = ctx.createRadialGradient(x2, y2, 2, x2, y2, 20);
+            gradient.addColorStop(0, '#fff');
+            gradient.addColorStop(0.5, '#ff69b4');
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(x2, y2, 25, 0, Math.PI*2);
+            ctx.fill();
+        }
+
+        init();
+        animate(); // 先开始循环，显示黑背景
+
+        // --- 逻辑控制 ---
+        const startBtn = document.getElementById('start-btn');
+        const startScreen = document.getElementById('start-screen');
+        const t1 = document.getElementById('t1');
+        const t2 = document.getElementById('t2');
+        const finalUI = document.getElementById('final-ui');
+        const bgm = document.getElementById('bgm');
+
+        startBtn.addEventListener('click', () => {
+            // 1. 播放音乐
+            bgm.play().catch(e => console.log('BGM error', e));
+            
+            // 2. 隐藏启动层
+            startScreen.style.opacity = 0;
+            setTimeout(() => startScreen.style.display = 'none', 1000);
+
+            // 3. 显示第一阶段文字
+            state = 'intro';
+            setTimeout(() => {
+                t1.style.opacity = 1;
+                t1.style.transform = 'translateY(0)';
+            }, 500);
+
+            setTimeout(() => {
+                t2.style.opacity = 1;
+                t2.style.transform = 'translateY(0)';
+            }, 1500);
+
+            // 4. 文字消散，树开始生长
+            setTimeout(() => {
+                // 隐藏 Intro 文字
+                t1.style.opacity = 0;
+                t2.style.opacity = 0;
+                t1.style.transform = 'translateY(-20px)';
+                t2.style.transform = 'translateY(-20px)';
+                
+                // 开启树的状态
+                state = 'tree';
+                
+                // 显示最终 UI
+                setTimeout(() => {
+                    finalUI.style.opacity = 1;
+                }, 2000); // 树长差不多了再显示
+                
+            }, 4500); // 4.5秒后进入树的动画
+        });
+
+    </script>
+</body>
+</html>
